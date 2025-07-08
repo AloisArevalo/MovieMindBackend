@@ -1,9 +1,10 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from .recommendation_engine import RecommendationEngine
+from app.extensions import recommendation_engine
 from .tmdb_service import TMDBService
 from .models import Movie
 from .database import db
+
 
 # Crear el Blueprint de recomendaciones
 recommendations_blueprint = Blueprint('recommendations', __name__)
@@ -12,13 +13,10 @@ recommendations_blueprint = Blueprint('recommendations', __name__)
 @jwt_required()
 def get_recommendations():
     user_id = get_jwt_identity()
-    
-    # Crea una instancia al iniciar
-    engine = RecommendationEngine()
 
     try:
         # Obtener recomendaciones
-        recommendations = engine.get_recommendations(user_id)
+        recommendations = recommendation_engine.get_recommendations();
         
         # Formatear respuesta
         result = []

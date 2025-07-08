@@ -12,24 +12,36 @@ class SQLServer:
         app.teardown_appcontext(self.teardown)
 
     @contextmanager
-    def get_connection(self):
-        conn_str = (
-            f"DRIVER={current_app.config['SQL_DRIVER']};"
-            f"SERVER={current_app.config['SQL_SERVER']};"
-            f"DATABASE={current_app.config['SQL_DATABASE']};"
-            f"UID={current_app.config['SQL_USERNAME']};"
-            f"PWD={current_app.config['SQL_PASSWORD']}"
-        )
+    def get_connection():
+        """Versión corregida que funciona con contexto Flask"""
+        if not current_app:
+            raise RuntimeError("No se encontró la aplicación Flask")
+        
+        conn_str = f"""
+            DRIVER={{{current_app.config.get('SQL_DRIVER', 'ODBC Driver 17 for SQL Server')}}};
+            SERVER={current_app.config['SQL_SERVER']};
+            DATABASE={current_app.config['SQL_DATABASE']};
+            UID={current_app.config['SQL_USERNAME']};
+            PWD={current_app.config['SQL_PASSWORD']}
+        """
         conn = None
         try:
             conn = pyodbc.connect(conn_str)
             yield conn
-        except pyodbc.Error as e:
-            current_app.logger.error(f"Database connection failed: {e}")
-            raise
         finally:
             if conn:
                 conn.close()
+
+    def get_raw_connection_test():
+        """Método solo para pruebas de conexión"""
+        conn_str = f"""
+            DRIVER={{{current_app.config.get('SQL_DRIVER', 'ODBC Driver 17 for SQL Server')}}};
+            SERVER={current_app.config['SQL_SERVER']};
+            DATABASE={current_app.config['SQL_DATABASE']};
+            UID={current_app.config['SQL_USERNAME']};
+            PWD={current_app.config['SQL_PASSWORD']}
+        """
+        return pyodbc.connect(conn_str)
 
     def teardown(self, exception):
         pass

@@ -1,14 +1,15 @@
 from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 from .database import db
-from .recommendation_engine import RecommendationEngine
+#from .recommendation_engine import RecommendationEngine
 from .auth import auth_blueprint, jwt
 from .recommendations import recommendations_blueprint
+from .extensions import recommendation_engine
 
 
 def create_app():
     app = Flask(__name__)
-    app.config.from_object('config.Config')
+    #app.config.from_object('config.Config')
     
     # Inicializar extensiones
     CORS(app)
@@ -18,7 +19,7 @@ def create_app():
     #from .auth import auth_blueprint
     jwt.init_app(app)
 
-    recommendation_engine = RecommendationEngine(app)
+    recommendation_engine.init_app(app)
     
     # Registrar blueprints
     app.register_blueprint(auth_blueprint, url_prefix='/auth')

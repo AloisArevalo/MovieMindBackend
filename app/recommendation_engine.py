@@ -12,18 +12,20 @@ import logging
 class RecommendationEngine:
     _instance = None
 
-    def __new__(cls, app=None):
+    def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self, app=None):
+    def __init__(self):
         if not self._initialized:
             self.tfidf = TfidfVectorizer(stop_words='english')
             self.cosine_sim = None
             self.movie_features = None
             self._initialized = True
+            self.app = None
+        print(f"Instancia creada (ID: {id(self)})")
 
     def init_app(self, app):
         self.app = app
@@ -52,43 +54,70 @@ class RecommendationEngine:
         """Entrena la matriz de similitud"""
         print("Iniciando entrenamiento del modelo...")
         
-        # 1. Obtener películas populares para entrenamiento
-        popular_movies = self._get_popular_movies_for_training()
-        if not popular_movies:
-            print("No hay películas en la base de datos para entrenar")
-            return
+        # 1. Verificar conexión a la base de datos
+        try:
+            test_conn = db.get_raw_connection_test()
+            test_conn.close()
+        except Exception as e:
+            print(f"❌ Error de conexión a la base de datos: {str(e)}")
+            return False
 
-        # 2. Extraer características
+        # 2. Obtener y validar datos
+        movies = self._get_popular_movies_for_training()
+        if not movies:
+            print("""
+            ❌ No se pudieron obtener películas de la base de datos.
+            Posibles causas:
+            1. La tabla 'user_history' está vacía
+            2. Problemas de permisos de lectura
+            3. Error en la conexión a la base de datos
+            
+            Verifica con:
+            SELECT * FROM user_history;
+            """)
+            return False
+
+        print(f"📊 Películas encontradas: {len(movies)}")
+        return True
+
+        # 3. Procesar características
         features = []
-        movie_ids = []
-        for movie in popular_movies:
+        valid_movies = []
+        for movie in movies:
             details = TMDBService.get_movie_details(movie['movie_id'])
             if details:
-                feature_str = self._create_feature_string(details)
-                features.append(feature_str)
-                movie_ids.append(movie['movie_id'])
+                features.append(self._create_feature_string(details))
+                valid_movies.append(movie['movie_id'])
 
-        # 3. Vectorizar y calcular similitud
-        if features:
-            print(f"Procesando {len(features)} películas...")
+        if len(valid_movies) < 3:
+            print(f"❌ Solo {len(valid_movies)} películas válidas. Se necesitan al menos 3.")
+            return False
+
+        # 4. Entrenamiento final
+        try:
             tfidf_matrix = self.tfidf.fit_transform(features)
-            self.cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
-            self.movie_features = pd.Series(movie_ids, name='movie_id')
-            print("Matriz de similitud generada:", self.cosine_sim.shape)
-        else:
-            print("No se pudieron extraer características de las películas")
+            self.cosine_sim = cosine_similarity(tfidf_matrix)
+            print(f"✅ Entrenado con {len(valid_movies)} películas. Matriz: {self.cosine_sim.shape}")
+            return True
+        except Exception as e:
+            print(f"❌ Error en entrenamiento: {str(e)}")
+            return False
 
     def _get_popular_movies_for_training(self):
+        """Versión final probada"""
         try:
-            with db.get_connection() as conn:  # Ahora db está correctamente importado
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT TOP 50 movie_id FROM user_history 
-                    ORDER BY rating DESC 
-                """)
-                return [{'movie_id': row[0]} for row in cursor.fetchall()]
+            with self.app.app_context():
+                with db.get_connection() as conn:  # Usa el context manager corregido
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT movie_id 
+                        FROM user_history
+                        GROUP BY movie_id
+                        ORDER BY COUNT(*) DESC
+                    """)
+                    return [{'movie_id': row[0]} for row in cursor.fetchall()]
         except Exception as e:
-            self.app.logger.error(f"Error getting popular movies: {e}")
+            self.app.logger.error(f"Error SQL definitivo: {str(e)}")
             return []
 
     def _create_feature_string(self, movie_details):
